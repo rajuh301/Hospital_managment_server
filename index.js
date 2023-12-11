@@ -5,6 +5,8 @@ require('dotenv').config()
 const port = process.env.PORT || 5000;
 
 
+
+
 // meddleware
 app.use(cors());
 app.use(express.json());
@@ -37,6 +39,8 @@ async function run() {
         const testChargeCollection = client.db("hospitalManagment").collection("testCharge");
         const doctorCollection = client.db("hospitalManagment").collection("doctor");
         const testCollection = client.db("hospitalManagment").collection("test");
+        const requisitionCollection = client.db("hospitalManagment").collection("requisition");
+        const operationNameCollection = client.db("hospitalManagment").collection("operation");
 
         // connection--------------------
 
@@ -144,6 +148,54 @@ async function run() {
             res.send(result);
         })
 
+
+
+        app.patch('/addPasent/:id', async (req, res) => {
+            const { id } = req.params;
+            const { doctorReferral, date, charge } = req.body; // Extract charge from req.body
+
+            try {
+                const foundData = await pasentCollection.findOne({ _id: new ObjectId(id) });
+
+                if (!foundData) {
+                    return res.status(404).json({ message: 'Patient not found' });
+                }
+
+                // Push new date to the existing array of dates or create a new array
+                const updatedDate = new Date().toISOString();
+
+                // Push new referral to the existing array of referrals or create a new array
+                const updatedDoctorReferral = doctorReferral;
+
+                // Keep the existing charge values as it is
+                const updatedCharge = [(foundData.charge || []), (charge || [])];
+
+                const updatedPatient = await pasentCollection.findOneAndUpdate(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            referral: updatedDoctorReferral,
+                            charge: updatedCharge,
+                            date: updatedDate
+                        }
+                    },
+                    { new: true }
+                );
+
+                res.json({ message: 'Patient information updated successfully', updatedData: updatedPatient });
+            } catch (error) {
+                console.error('Error updating patient:', error);
+                res.status(500).json({ message: 'Error updating patient' });
+            }
+        });
+
+
+
+
+
+
+
+
         app.get('/pasent', async (req, res) => {
             const result = await pasentCollection.find().toArray();
             res.send(result);
@@ -154,7 +206,7 @@ async function run() {
 
         app.patch('/pasent/:id', (req, res) => {
             const { id } = req.params;
-            const { data, timestamp } = req.body;
+            const { data, doctor, timestamp } = req.body;
 
             const foundData = pasentCollection.findOneAndUpdate(
                 { _id: new ObjectId(id) },
@@ -162,7 +214,8 @@ async function run() {
                     $push: {
                         prediction: {
                             timestamp: new Date().toISOString(),
-                            data
+                            data,
+                            doctor
                         }
                     }
                 }
@@ -189,7 +242,7 @@ async function run() {
         app.patch('/updateTest/:id/:index', (req, res) => {
             const { id, index } = req.params;
             const { data } = req.body; // Expect 'data' field in the request body
-        
+
             pasentCollection.findOneAndUpdate(
                 { _id: new ObjectId(id) },
                 {
@@ -207,9 +260,9 @@ async function run() {
                 }
             );
         });
-        
-        
-        
+
+
+
         // ------------------------ Pasent Releted Api----------------
 
         // ---------------------- Admin Releted Api--------------------
@@ -312,6 +365,7 @@ async function run() {
         })
 
 
+
         app.get('/addTest', async (req, res) => {
             const result = await testCollection.find().toArray();
             res.send(result);
@@ -331,7 +385,7 @@ async function run() {
                         test: test.testName, // Ensure the structure matches your database
                         inputValue: test.inputValue, // Add the inputValue to the database
                         charge: test.price,
-
+                        doctor: test.doctor,
                     };
 
                     const tested = await pasentCollection.findOneAndUpdate(
@@ -362,6 +416,130 @@ async function run() {
         // ------------------ test Area ----------------
 
         // ---------------------- Admin Releted Api--------------------
+
+
+
+        // ------------------------------ requisition -----------------------
+        app.post('/requisition', async (req, res) => {
+            try {
+                const currentDate = new Date();
+                const requisition = req.body;
+
+                requisition.date = currentDate.toISOString();
+                requisition.status = true;
+
+                const result = await requisitionCollection.insertOne(requisition);
+                res.json(result);
+            } catch (error) {
+                console.error(error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
+
+
+
+        app.get('/requisition', async (req, res) => {
+            const result = await requisitionCollection.find().toArray();
+            res.send(result);
+        })
+
+
+        app.patch('/requisition/:id', async (req, res) => {
+            const { id } = req.params;
+            const newData = req.body;
+
+            try {
+                const result = await requisitionCollection.updateOne(
+                    { _id: new ObjectId(id) }, // Use new ObjectId(id)
+                    { $set: newData }
+                );
+
+                // ... (rest of the code)
+            } catch (err) {
+                console.error('Error updating resource:', err);
+                res.status(500).json({ message: 'Internal server error' });
+            }
+        });
+
+
+        // ------------------------------ requisition -----------------------
+
+
+
+        // --------------------------- Opratione Area ----------------------
+        app.patch('/opration/:id', async (req, res) => {
+            const cashId = req.params.id;
+            const { operationName, description, doctor } = req.body;
+        
+            try {
+                const updatedOperation = {
+                    timestamp: new Date().toISOString(),
+                    operation: operationName,
+                    inputValue: description,
+                    doctor: doctor,
+                };
+        
+                const updatedData = await pasentCollection.findOneAndUpdate(
+                    { _id: new ObjectId(cashId) },
+                    { $push: { operation: updatedOperation } },
+                    { new: true }
+                );
+        
+                if (!updatedData) {
+                    return res.status(404).json({ message: 'Operation not found' });
+                }
+        
+                res.json({ message: 'Operation updated successfully', updatedData });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: 'Error updating operation' });
+            }
+        });
+        
+
+
+        app.patch('/updateOperation/:id/:index', (req, res) => {
+            const { id, index } = req.params;
+            const inputAmount = req.body.inputAmount; // Extract inputAmount directly
+          
+            pasentCollection.findOneAndUpdate(
+              { _id: new ObjectId(id) },
+              {
+                $set: {
+                  [`operation.${index}.price`]: inputAmount, // Use $set to update directly
+                },
+              },
+              { new: true },
+              (err, updatedData) => {
+                if (err) {
+                  res.status(500).json({ message: 'Error updating data' });
+                } else {
+                  res.json({ message: 'Species updated successfully', updatedData });
+                }
+              }
+            );
+          });
+          
+
+        
+        //   app.post('/addOperation', async (req, res) => {
+        //     const inputData = req.body;
+        //     const timestamp = new Date();
+        //     inputData.timestamp = timestamp;
+        //     const result = await operationNameCollection.insertOne(inputData);
+        //     res.send(result);
+        // })
+
+
+        app.get('/addOperation', async (req, res) => {
+            const result = await operationNameCollection.find().toArray();
+            res.send(result);
+        })
+
+
+        // --------------------------- Opratione Area ----------------------
+
+
 
 
 
